@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -35,5 +39,11 @@ jobs:
           --slots-json /tmp/slots.json
           --analysis-json /tmp/analysis.json
           --quiet
-      - name: Exercise inferred-cadence profile
+      - name: Exercise inferred cadence on jittered JSONL
+        run: >-
+          nulltrace scan examples/jittered.jsonl
+          --threshold 0.70
+          --analysis-json /tmp/jitter-analysis.json
+          --quiet
+      - name: Exercise profile command
         run: nulltrace profile examples/demo.csv --json /tmp/profiles.json
