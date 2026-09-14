@@ -1,6 +1,30 @@
 """NullTrace Atlas: explainable negative-evidence cartography."""
 
-from .core import DetectionConfig, Observation, detect_null_traces, load_csv
+from .core import (
+    DetectionConfig,
+    EntityProfile,
+    Observation,
+    analyze_observations,
+    detect_null_slots,
+    detect_null_traces,
+    load_csv,
+    load_jsonl,
+    load_observations,
+    profile_observations,
+    to_geojson,
+)
 
-__all__ = ["DetectionConfig", "Observation", "detect_null_traces", "load_csv"]
-__version__ = "0.1.0"
+__all__ = [
+    "DetectionConfig",
+    "EntityProfile",
+    "Observation",
+    "analyze_observations",
+    "detect_null_slots",
+    "detect_null_traces",
+    "load_csv",
+    "load_jsonl",
+    "load_observations",
+    "profile_observations",
+    "to_geojson",
+]
+__version__ = "1.0.0"
