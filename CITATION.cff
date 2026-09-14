@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use NullTrace Atlas in research, please cite this software."
+title: "NullTrace Atlas"
+type: software
+authors:
+  - family-names: "Mariscal Fernández"
+    given-names: "David"
+version: 1.0.0
+date-released: 2026-09-14
+repository-code: "https://github.com/davidmariscalf/NullTrace-Atlas"
+license: MIT
+abstract: "Explainable negative-evidence cartography for sparse spatiotemporal observations."
