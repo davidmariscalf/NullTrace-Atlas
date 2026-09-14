@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from . import __version__
 from .core import DetectionConfig, analyze_observations, load_observations, to_geojson
 
 
@@ -20,6 +21,12 @@ def _add_detection_options(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=0.15,
         help="automatic tolerance as fraction of cadence (default: 0.15)",
+    )
+    parser.add_argument(
+        "--max-cadence-multiple",
+        type=int,
+        default=12,
+        help="largest missing interval multiple considered during cadence inference",
     )
     parser.add_argument("--threshold", type=float, default=0.70)
     parser.add_argument("--window", type=int, default=2, help="temporal evidence window in slots")
@@ -42,6 +49,7 @@ def _config_from_args(args: argparse.Namespace) -> DetectionConfig:
         cadence_seconds=args.cadence,
         cadence_tolerance_seconds=args.tolerance,
         cadence_tolerance_fraction=args.tolerance_fraction,
+        max_cadence_multiple=args.max_cadence_multiple,
         threshold=args.threshold,
         temporal_window=args.window,
         peer_radius_km=args.peer_radius_km,
@@ -59,6 +67,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="nulltrace",
         description="Detect explainable, structurally surprising absences in spatiotemporal observations.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scan = subparsers.add_parser("scan", help="detect null traces in CSV or JSONL observations")
