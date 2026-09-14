@@ -2,118 +2,174 @@
 
 **Map what should have been observed, but was not.**
 
-NullTrace Atlas is an experimental **negative-evidence cartography** engine for sparse spatiotemporal event streams. Instead of treating missing rows as ordinary null values, it asks a narrower question:
+NullTrace Atlas is an explainable negative evidence engine for sparse spatiotemporal event streams. It reconstructs an expected observation process, identifies missing slots that are unusually well supported by surrounding evidence, merges contiguous gaps into deterministic **null traces**, and exports the evidence behind every result.
 
-> Given this source's own temporal behaviour and nearby peer observations, where is an absence unusually well-supported?
+It is designed for cases where the *shape of missing data* matters: environmental sensors, biodiversity observations, transit telemetry, telescope logs, infrastructure monitoring, archival feeds, citizen science and other repeated observation systems.
 
-It turns those structured absences into explainable **null traces** that can be exported as JSON or GeoJSON.
+## What makes it unusual
 
-This is useful when the *shape of missing data* matters: environmental sensor networks, biodiversity observations, transit telemetry, archival datasets, telescope logs, citizen-science feeds, infrastructure monitoring, and other systems where an expected observation can fail to appear.
+A normal missing data tool starts with rows that already exist and asks which fields are null. NullTrace Atlas starts with the observation process itself and asks:
 
-## The important distinction
+> Given this entity's cadence, timing regularity, neighbouring observations and nearby peers, where should an observation probably have existed but did not?
 
-NullTrace Atlas never claims that an unobserved event happened.
+It never turns absence into an event and never claims to know the cause of a gap.
 
-It separates:
+## Core concepts
 
-- **missing data** — a record is absent;
-- **expected observation** — surrounding evidence suggests a record would normally exist;
-- **null trace** — a contiguous absence with enough explicit support to be interesting.
+* **Expected slot**: a timestamp implied by the inferred or configured cadence.
+* **Supported absence**: an expected slot that is missing but has enough surrounding evidence.
+* **Null trace**: one or more consecutive supported absences for the same entity.
+* **Evidence profile**: whether a trace is supported temporally, by nearby peers, or by both.
 
-A null trace is a data-quality or investigation signal, **not proof of a cause**.
+## Version 1.0
 
-## Why this is different from a missingness heatmap
+The v1 engine includes:
 
-Conventional missingness tools show where values are null. NullTrace Atlas reconstructs the expected observation grid, scores absent slots using multiple independent forms of support, joins contiguous candidates into traces, and emits evidence for every score.
+* robust cadence inference that can recover the base cadence through multi slot gaps
+* timestamp jitter tolerance instead of exact timestamp matching
+* temporal evidence around each missing slot
+* geodesic peer discovery with reliability weighted peer support
+* entity coverage and timing regularity profiles
+* deterministic trace IDs
+* contiguous trace merging
+* CSV, JSONL and NDJSON input
+* JSON, slot level JSON, full analysis JSON and GeoJSON output
+* a dependency free Python API and CLI
+* bounded grid reconstruction to prevent accidental memory explosions
+* validation for timestamps, coordinates and quality fields
 
-The MVP deliberately uses a transparent model rather than a black-box anomaly detector.
+## Installation
 
-## Input
-
-CSV with one observation per row:
-
-```csv
-entity,timestamp,lat,lon,value
-alpha,2026-01-01T00:00:00Z,40.4168,-3.7038,12.2
-alpha,2026-01-01T01:00:00Z,40.4168,-3.7038,12.4
-beta,2026-01-01T00:00:00Z,40.4200,-3.7000,8.1
-```
-
-Required columns: `entity`, `timestamp`.
-
-Optional `lat` and `lon` allow spatial peer evidence and GeoJSON export. Other columns are ignored by the core engine.
-
-## Detection model
-
-For each entity, the engine creates an expected time grid using either a user-provided cadence or the entity's median observed interval.
-
-For every absent slot it computes:
-
-1. **temporal support** — how consistently the same entity is observed in neighbouring expected slots;
-2. **peer support** — when coordinates exist, how many nearby entities are observed at the same slot;
-3. **evidence count** — how many concrete neighbouring observations support the score.
-
-The score is intentionally simple and inspectable:
-
-```text
-score = temporal_weight * temporal_support
-      + peer_weight     * peer_support
-```
-
-Only absences above the threshold and minimum evidence become candidates. Consecutive candidates for one entity are merged into a null trace.
-
-## Quick start
-
-Requires Python 3.10+ and has no runtime dependencies.
+Requires Python 3.10 or newer and has no runtime dependencies.
 
 ```bash
 python -m pip install -e .
-nulltrace scan examples/demo.csv --cadence 3600 --threshold 0.70 --json traces.json
-nulltrace scan examples/demo.csv --cadence 3600 --threshold 0.70 --geojson traces.geojson
 ```
 
-Or just inspect the demo:
+## Input
+
+CSV:
+
+```csv
+entity,timestamp,lat,lon,source,quality
+alpha,2026-01-01T00:00:00Z,40.4168,-3.7038,station-feed,1.0
+alpha,2026-01-01T01:00:12Z,40.4168,-3.7038,station-feed,1.0
+beta,2026-01-01T00:00:04Z,40.4200,-3.7000,station-feed,0.9
+```
+
+JSONL is also accepted:
+
+```json
+{"entity":"alpha","timestamp":"2026-01-01T00:00:00Z","lat":40.4168,"lon":-3.7038}
+{"entity":"alpha","timestamp":"2026-01-01T01:00:08Z","lat":40.4168,"lon":-3.7038}
+```
+
+Required fields are `entity` and `timestamp`. `lat` and `lon` are optional but must appear together. `source` and `quality` are optional metadata; quality must be between 0 and 1.
+
+## Quick start
+
+Let NullTrace infer cadence and tolerance:
 
 ```bash
-nulltrace scan examples/demo.csv --cadence 3600 --threshold 0.65
+nulltrace scan examples/demo.csv
 ```
 
-## Example interpretation
+Use an explicit hourly cadence and export every representation:
 
-If station `alpha` normally reports every hour, reports immediately before and after 03:00, and several nearby stations also report at 03:00, then an absent `alpha@03:00` can receive a high null-trace score.
+```bash
+nulltrace scan examples/demo.csv \
+  --cadence 3600 \
+  --threshold 0.70 \
+  --json traces.json \
+  --slots-json slots.json \
+  --geojson traces.geojson \
+  --analysis-json analysis.json
+```
 
-That means **"this missing observation is structurally surprising"**, not **"the sensor definitely failed"**.
+Inspect the reconstructed observation process without flagging gaps:
 
-## Output
+```bash
+nulltrace profile examples/demo.csv
+```
 
-Each trace contains:
+## Detection model
 
-- entity
-- start and end timestamps
-- number of missing slots
-- mean and maximum score
-- temporal and peer support
-- evidence count
-- cadence used
-- coordinates when available
+For each entity, NullTrace Atlas:
 
-GeoJSON output represents each trace as a point at the entity location with the trace evidence in `properties`.
+1. infers a base cadence from integer multiples of observed time deltas, unless cadence is supplied explicitly;
+2. maps observations onto an expected grid with a bounded timestamp tolerance;
+3. measures how consistently observations align to that grid;
+4. scores missing slots from temporal support, optional nearby peer support and source regularity;
+5. requires both a score threshold and a concrete evidence count;
+6. merges adjacent accepted slots into a trace.
 
-## Design principles
+The default score is a weighted mean of available evidence channels:
 
-1. **Negative evidence must stay explicit.** Absence is not silently converted into an event.
-2. **Every score must be explainable.** No opaque model is required for the MVP.
-3. **Do not confuse coverage with reality.** A trace may indicate instrumentation, sampling, ingestion or archival behaviour.
-4. **No imputation by default.** The tool identifies surprising gaps; it does not fabricate replacement measurements.
-5. **Reproducible first.** Same input and parameters produce the same traces.
+```text
+55% temporal support
+30% spatial peer support, when available
+15% entity timing regularity
+```
 
-## Repository status
+Peer observations are weighted by the peer's own coverage and timing regularity. Scores are ranking signals, not calibrated probabilities.
 
-This is an early research/engineering prototype. It is not a forensic, safety-critical, compliance, medical, or scientific-proof system. Real deployments need source-specific calibration and independent validation.
+See [`docs/ALGORITHM.md`](docs/ALGORITHM.md) for the exact mechanics and [`docs/FORMAT.md`](docs/FORMAT.md) for input and output contracts.
+
+## Programmatic API
+
+```python
+from nulltrace_atlas import DetectionConfig, Observation, analyze_observations
+
+analysis = analyze_observations(
+    observations,
+    DetectionConfig(threshold=0.75, peer_radius_km=3.0),
+)
+
+print(analysis["profiles"])
+print(analysis["slots"])
+print(analysis["traces"])
+print(analysis["summary"])
+```
+
+Convenience functions are also available: `profile_observations`, `detect_null_slots`, `detect_null_traces`, `load_csv`, `load_jsonl`, `load_observations` and `to_geojson`.
+
+## Trace output
+
+A trace includes:
+
+* deterministic `trace_id`
+* entity, start and end
+* missing slot count and implied duration
+* mean and maximum score
+* temporal and peer support
+* timing regularity and coverage
+* evidence count and peer hits
+* evidence profile
+* cadence and timestamp tolerance used
+* median entity coordinates when available
+
+GeoJSON represents geolocated traces as points with the complete trace evidence in `properties`.
+
+## Safety of interpretation
+
+A high score means **the missing observation is structurally surprising under this observation model**. It does not identify why it is missing.
+
+Possible causes include sensor outage, maintenance, ingestion failure, filtering, archive loss, deliberate shutdown, sampling policy changes or a bad cadence model. NullTrace Atlas is an investigation and data quality tool, not causal inference.
+
+It should not be the sole basis for forensic, medical, emergency, compliance or safety critical decisions.
 
 ## Novelty note
 
-There are established tools for visualising missingness and research code for simulating structured missing-data mechanisms. NullTrace Atlas targets a different operational object: **contiguous, scored, evidence-bearing absences in an expected spatiotemporal observation process**. The claim here is a distinct design combination, not a provable claim that no prior implementation anywhere has ever explored a similar idea.
+There are established missingness visualisation tools and research methods for modelling structured missing data. NullTrace Atlas focuses on a narrower operational object: **contiguous, scored, evidence bearing absences reconstructed from an expected spatiotemporal observation process**. That is a distinct design combination, not a provable claim that no similar idea has ever existed.
+
+## Development
+
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q nulltrace_atlas
+```
+
+CI runs the package on Python 3.10, 3.12 and 3.13 and exercises both unit tests and real CLI flows.
 
 ## License
 
