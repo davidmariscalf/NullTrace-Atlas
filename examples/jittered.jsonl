@@ -1,0 +1,9 @@
+{"entity":"alpha","timestamp":"2026-01-01T00:00:00Z","lat":40.4168,"lon":-3.7038,"source":"demo"}
+{"entity":"alpha","timestamp":"2026-01-01T01:00:09Z","lat":40.4168,"lon":-3.7038,"source":"demo"}
+{"entity":"alpha","timestamp":"2026-01-01T02:59:56Z","lat":40.4168,"lon":-3.7038,"source":"demo"}
+{"entity":"alpha","timestamp":"2026-01-01T04:00:04Z","lat":40.4168,"lon":-3.7038,"source":"demo"}
+{"entity":"beta","timestamp":"2026-01-01T00:00:03Z","lat":40.4180,"lon":-3.7020,"source":"demo"}
+{"entity":"beta","timestamp":"2026-01-01T01:00:00Z","lat":40.4180,"lon":-3.7020,"source":"demo"}
+{"entity":"beta","timestamp":"2026-01-01T02:00:05Z","lat":40.4180,"lon":-3.7020,"source":"demo"}
+{"entity":"beta","timestamp":"2026-01-01T03:00:02Z","lat":40.4180,"lon":-3.7020,"source":"demo"}
+{"entity":"beta","timestamp":"2026-01-01T03:59:58Z","lat":40.4180,"lon":-3.7020,"source":"demo"}
