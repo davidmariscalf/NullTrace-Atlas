@@ -1,61 +1,156 @@
 # Detection model
 
-NullTrace Atlas is deliberately conservative about what an absence means.
+NullTrace Atlas is deliberately conservative about what an absence means. It reconstructs an expected observation process and surfaces absences that are unusually well supported by evidence already present in the data.
 
-## 1. Reconstruct an expected observation grid
+## 1. Validate and group observations
 
-For each entity, the engine uses either an explicit cadence or the median positive interval between observations. The grid is bounded by the first and last observation; the MVP never extrapolates before or after that range.
+Observations are normalised to UTC and grouped by `entity`. Coordinates, when present, must be valid latitude and longitude pairs. Duplicate timestamps do not create duplicate expected slots.
 
-## 2. Score missing slots
+An entity must contain at least `min_observations` distinct timestamps before it is profiled.
 
-A missing slot receives two possible evidence channels.
+## 2. Infer a base cadence
+
+If `cadence_seconds` is supplied, that value is used directly.
+
+Otherwise the engine examines positive time deltas between consecutive observations. For every delta `d`, candidate base cadences `d / k` are considered for integer multiples `k` from 1 through `max_cadence_multiple`.
+
+A candidate receives support when observed deltas are close to integer multiples of that candidate. Ties favour the larger base cadence, preventing an hourly stream from being unnecessarily explained as a 30 minute or 15 minute stream. The winning candidate is then refined from the median implied base interval.
+
+This allows a sequence such as:
+
+```text
+00:00, 01:00, 04:00, 05:00
+```
+
+to recover a one hour cadence instead of treating the three hour gap as the normal interval.
+
+## 3. Reconstruct a tolerant expected grid
+
+The first observation anchors the grid. Every later observation is mapped to the nearest expected slot when it falls within the configured timestamp tolerance.
+
+By default:
+
+```text
+tolerance = cadence * cadence_tolerance_fraction
+```
+
+with a default fraction of `0.15`. Tolerance is capped below half a cadence so one observation cannot legitimately belong to two adjacent slots.
+
+This makes the model robust to ordinary timestamp jitter.
+
+The grid never extrapolates before the first observation or beyond the last mapped slot. `max_expected_slots` places a hard safety bound on grid size.
+
+## 4. Profile coverage and regularity
+
+For each entity:
+
+```text
+coverage = observed_grid_slots / expected_grid_slots
+regularity = observations_that_align_to_grid / observations
+```
+
+Coverage describes how complete the reconstructed process is. Regularity describes how strongly the timestamps behave like a cadence driven process.
+
+## 5. Find spatial peers
+
+When coordinates are available, each entity receives peers whose median coordinates lie inside `peer_radius_km` using haversine distance.
+
+A peer is eligible for a candidate slot only when that time lies inside the peer's own observed time range, allowing for its timestamp tolerance.
+
+Peer observations are matched with their own tolerance, not exact timestamp equality.
+
+## 6. Score a missing slot
+
+A grid slot absent for the target entity can receive three evidence channels.
 
 ### Temporal support
 
-Within a symmetric window around the missing slot, count how many expected neighbouring slots are actually observed for the same entity.
+Within a symmetric window around the missing slot:
 
 ```text
-temporal_support = observed_neighbor_slots / available_neighbor_slots
+temporal_support = observed_neighbour_slots / available_neighbour_slots
 ```
 
 ### Spatial peer support
 
-If entity coordinates exist, find peers inside the configured radius. A peer is eligible only if the candidate time lies inside that peer's observed time range.
+Eligible nearby peers are weighted by their own coverage and regularity:
 
 ```text
-peer_support = peers_observed_at_slot / eligible_peers
+peer_reliability = max(0.05, peer_coverage * peer_regularity)
+peer_support = reliability_weighted_fraction_of_peers_observed_near_slot
 ```
 
-If there are no eligible spatial peers, peer evidence is omitted rather than treated as zero.
+If no peer is eligible, peer support is omitted rather than treated as zero.
 
-## 3. Combine only available evidence
+### Regularity support
+
+The target entity's timing regularity acts as evidence that its expected grid is meaningful. A gap in a highly regular stream is more interpretable than a gap in a chaotic one.
+
+## 7. Combine only available channels
+
+The default weights are:
 
 ```text
-score = weighted_mean(temporal_support, peer_support)
+temporal_weight   = 0.55
+peer_weight       = 0.30
+regularity_weight = 0.15
 ```
 
-The default weights are 0.65 temporal and 0.35 peer. The result is a ranking score, not a calibrated probability.
+The score is the weighted mean of available channels. If peer evidence is unavailable, its weight is omitted from both numerator and denominator.
 
-## 4. Require concrete evidence
+The result is a ranking score, not a calibrated probability.
 
-A candidate must satisfy both the score threshold and `min_evidence`. Evidence count is the number of neighbouring same-entity observations plus nearby peer observations that directly support the candidate.
+## 8. Require concrete evidence
 
-## 5. Merge consecutive candidates
+A slot is emitted only if:
 
-Adjacent missing slots for the same entity are merged into one null trace. Each trace reports duration in missing slots, mean/max score, support values, evidence count, cadence and coordinates when available.
+```text
+score >= threshold
+and
+evidence_count >= min_evidence
+```
 
-## Non-claims
+`evidence_count` contains concrete neighbouring target observations plus peer observations that directly support the slot. Global regularity is not counted as a concrete observation.
 
-A high score does not identify the cause of a gap. It can result from sensor outage, ingestion failure, maintenance, sampling rules, archive loss, filtering, deliberate shutdown, or other source-specific processes. NullTrace Atlas surfaces the pattern; source-specific investigation must explain it.
+## 9. Merge contiguous slots
 
-## Known MVP limitations
+Adjacent accepted slots for one entity are merged into a null trace. A trace records:
 
-- One cadence per entity.
-- Exact timestamp alignment; no tolerance window yet.
-- Static median coordinate per entity.
-- No seasonality model.
-- No cross-source reliability weighting.
-- No causal inference.
-- No calibrated probability semantics.
+* a deterministic SHA256 derived trace ID
+* start and end
+* missing slot count and implied duration
+* mean and maximum score
+* temporal and peer support
+* coverage and regularity
+* evidence counts
+* evidence profile
+* cadence and tolerance
+* coordinates when available
 
-These limitations are intentional: the first version prioritizes inspectability and falsifiability over model complexity.
+## Evidence profiles
+
+`mixed` means at least one slot has both temporal and peer hits.
+
+`peer-confirmed` means peer evidence exists without temporal hits.
+
+`temporal-only` means the trace is supported by the entity's own surrounding observations and regularity but no peer hit contributed.
+
+These labels describe evidence channels, not causes.
+
+## Non claims
+
+A high score does not identify why an observation is absent. Plausible explanations include sensor outage, ingestion failure, maintenance, archive loss, filtering, sampling policy changes, deliberate shutdown or a poor model assumption.
+
+NullTrace Atlas also does not claim that an unobserved event occurred. It scores the absence of an expected observation.
+
+## Remaining limitations
+
+* One inferred cadence per entity within a run.
+* Static median coordinates per entity.
+* No calendar or seasonal cadence model.
+* No explicit change point detection when a source changes cadence.
+* `quality` and `source` are accepted as input metadata but are not yet causal evidence channels.
+* No calibrated probability semantics.
+* No causal inference.
+
+These are explicit boundaries rather than hidden assumptions.
