@@ -155,11 +155,28 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _median_longitude(values: Sequence[float]) -> float:
+    """Return a dateline-safe median longitude.
+
+    Longitudes are unwrapped around the first observation before taking the
+    median. This keeps nearby values such as 179E and 179W adjacent instead of
+    averaging them through Greenwich.
+    """
+    reference = float(values[0])
+    unwrapped = [
+        reference + ((float(value) - reference + 180.0) % 360.0 - 180.0)
+        for value in values
+    ]
+    result = float(median(unwrapped))
+    normalized = ((result + 180.0) % 360.0) - 180.0
+    return 180.0 if normalized == -180.0 and result > 0 else normalized
+
+
 def _entity_coordinate(observations: Sequence[Observation]) -> tuple[float, float] | None:
     coords = [(o.lat, o.lon) for o in observations if o.lat is not None and o.lon is not None]
     if not coords:
         return None
-    return median([x[0] for x in coords]), median([x[1] for x in coords])
+    return median([x[0] for x in coords]), _median_longitude([x[1] for x in coords])
 
 
 def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
