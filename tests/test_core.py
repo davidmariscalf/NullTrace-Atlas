@@ -104,6 +104,20 @@ class NullTraceTests(unittest.TestCase):
         self.assertEqual(len(geo["features"]), 1)
         self.assertEqual(geo["features"][0]["geometry"]["coordinates"], [2.0, 1.0])
 
+    def test_entity_longitude_median_handles_antimeridian(self):
+        observations = [
+            Observation("dateline", t(0), 10.0, 179.0),
+            Observation("dateline", t(1), 10.0, -179.0),
+            Observation("dateline", t(2), 10.0, -178.0),
+        ]
+        profiles = profile_observations(
+            observations,
+            DetectionConfig(cadence_seconds=3600),
+        )
+        self.assertEqual(len(profiles), 1)
+        self.assertAlmostEqual(profiles[0]["lon"], -179.0)
+        self.assertAlmostEqual(profiles[0]["lat"], 10.0)
+
     def test_invalid_coordinate_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "lat must be between"):
             analyze_observations(
